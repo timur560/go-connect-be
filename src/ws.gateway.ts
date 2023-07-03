@@ -2,27 +2,21 @@ import { WebSocketGateway, OnGatewayInit } from '@nestjs/websockets';
 import * as ws from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 
+const HEARTBEAT_INTERVAL = 10000; // 10 seconds
+const HEARTBEAT_MESSAGE = { type: 'heartbeat' };
+
 @WebSocketGateway()
 export class WsGateway implements OnGatewayInit {
   public clients: { [key: string]: ws.WebSocket } = {};
 
   public requests: { [key: string]: any } = {}; // TODO: change any to a request type
 
+  private dfHeartbeatTimers: { [key: string]: any } = {};
+
   afterInit() {
     const wsServer = new ws.Server({
       port: process.env.WS_PORT || 3002,
     });
-
-    const sendUpdatedRequestsListToEveryone = () => {
-      Object.entries(this.clients).forEach((c) => {
-        c[1].send(
-          JSON.stringify({
-            type: 'requestsList',
-            requests: this.requests,
-          }),
-        );
-      });
-    };
 
     wsServer.on('connection', (ws, req) => {
       // console.log('new client connected');
@@ -38,12 +32,15 @@ export class WsGateway implements OnGatewayInit {
 
         switch (message.type) {
           case 'createRequest':
-            this.requests[id] = message.request;
-            sendUpdatedRequestsListToEveryone();
+            this.requests[id] = {
+              ...message.request,
+              createdAt: new Date(),
+            };
+            this.sendUpdatedRequestsListToEveryone();
             break;
           case 'cancelRequest':
             delete this.requests[id];
-            sendUpdatedRequestsListToEveryone();
+            this.sendUpdatedRequestsListToEveryone();
             break;
           case 'chatMessage':
             // type, recipientId, senderId, senderName, text
@@ -53,11 +50,38 @@ export class WsGateway implements OnGatewayInit {
             break;
         }
       });
+
       ws.on('close', () => {
-        delete this.clients[id];
-        delete this.requests[id];
-        sendUpdatedRequestsListToEveryone();
+        this.deleteClient(id);
       });
+
+      ws.on('error', () => {
+        this.deleteClient(id);
+      });
+
+      this.dfHeartbeatTimers[id] = setInterval(() => {
+        ws.send(JSON.stringify(HEARTBEAT_MESSAGE));
+      }, HEARTBEAT_INTERVAL);
     });
+  }
+
+  private sendUpdatedRequestsListToEveryone() {
+    Object.entries(this.clients).forEach((c) => {
+      c[1].send(
+        JSON.stringify({
+          type: 'requestsList',
+          requests: this.requests,
+        }),
+      );
+    });
+  }
+
+  private deleteClient(id: string) {
+    delete this.clients[id];
+    delete this.requests[id];
+    this.sendUpdatedRequestsListToEveryone();
+    if (this.dfHeartbeatTimers[id]) {
+      clearInterval(this.dfHeartbeatTimers[id]);
+    }
   }
 }
