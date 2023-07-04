@@ -1,6 +1,8 @@
 import { WebSocketGateway, OnGatewayInit } from '@nestjs/websockets';
 import * as ws from 'ws';
 import { v4 as uuidv4 } from 'uuid';
+import { createServer } from 'https';
+import { readFileSync } from 'fs';
 
 const HEARTBEAT_INTERVAL = 10000; // 10 seconds
 const HEARTBEAT_MESSAGE = { type: 'heartbeat' };
@@ -14,9 +16,21 @@ export class WsGateway implements OnGatewayInit {
   private dfHeartbeatTimers: { [key: string]: any } = {};
 
   afterInit() {
-    const wsServer = new ws.Server({
-      port: process.env.WS_PORT || 3002,
-    });
+    let server, wsServer;
+
+    if (process.env.KEY_PATH && process.env.CERT_PATH) {
+      server = createServer({
+        cert: readFileSync(process.env.CERT_PATH),
+        key: readFileSync(process.env.KEY_PATH),
+      });
+      wsServer = new ws.WebSocketServer({ server });
+    } else {
+      console.log('No certificates found.');
+
+      wsServer = new ws.Server({
+        port: process.env.WS_PORT || 3002,
+      });
+    }
 
     wsServer.on('connection', (ws, req) => {
       // console.log('new client connected');
