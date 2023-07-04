@@ -3,6 +3,9 @@ import * as ws from 'ws';
 import { v4 as uuidv4 } from 'uuid';
 import { createServer } from 'https';
 import { readFileSync } from 'fs';
+import * as dotenv from 'dotenv';
+
+dotenv.config();
 
 const HEARTBEAT_INTERVAL = 10000; // 10 seconds
 const HEARTBEAT_MESSAGE = { type: 'heartbeat' };
@@ -77,6 +80,10 @@ export class WsGateway implements OnGatewayInit {
         ws.send(JSON.stringify(HEARTBEAT_MESSAGE));
       }, HEARTBEAT_INTERVAL);
     });
+
+    if (server) {
+      server.listen(process.env.WS_PORT || 3002);
+    }
   }
 
   private sendUpdatedRequestsListToEveryone() {
